@@ -30,6 +30,7 @@
   };
 
   var app = {
+    hasRequestPending: false,
     isLoading: true,
     visibleCards: {},
     selectedCities: [],
@@ -65,8 +66,8 @@
     var label = selected.textContent;
     app.getForecast(key, label);
     app.selectedCities.push({key: key, label: label});
-    app.toggleAddDialog(false);
     app.saveSelectedCities();
+    app.toggleAddDialog(false);
   });
 
   document.getElementById('butAddCancel').addEventListener('click', function() {
@@ -152,7 +153,24 @@
   app.getForecast = function(key, label) {
     var url = 'https://publicdata-weather.firebaseio.com/';
     url += key + '.json';
+    if ('caches' in window) {
+      caches.match(url).then(function(response) {
+        if (response) {
+          response.json().then(function(json) {
+            // Only update if the XHR is still pending, otherwise the XHR
+            // has already returned and provided the latest data.
+            if (app.hasRequestPending) {
+              console.log('updated from cache');
+              json.key = key;
+              json.label = label;
+              app.updateForecastCard(json);
+            }
+          });
+        }
+      });
+    }
     // Make the XHR to get the data, then update the card
+    app.hasRequestPending = true;
     var request = new XMLHttpRequest();
     request.onreadystatechange = function() {
       if (request.readyState === XMLHttpRequest.DONE) {
@@ -160,6 +178,7 @@
           var response = JSON.parse(request.response);
           response.key = key;
           response.label = label;
+          app.hasRequestPending = false;
           app.updateForecastCard(response);
         }
       }
@@ -176,38 +195,10 @@
     });
   };
 
-  var fakeForecast = {
-    key: 'newyork',
-    label: 'New York, NY',
-    currently: {
-      time: 1453489481,
-      summary: 'Clear',
-      icon: 'partly-cloudy-day',
-      temperature: 30,
-      apparentTemperature: 21,
-      precipProbability: 0.80,
-      humidity: 0.17,
-      windBearing: 125,
-      windSpeed: 1.52
-    },
-    daily: {
-      data: [
-        {icon: 'clear-day', temperatureMax: 36, temperatureMin: 31},
-        {icon: 'rain', temperatureMax: 34, temperatureMin: 28},
-        {icon: 'snow', temperatureMax: 31, temperatureMin: 17},
-        {icon: 'sleet', temperatureMax: 38, temperatureMin: 31},
-        {icon: 'fog', temperatureMax: 40, temperatureMin: 36},
-        {icon: 'wind', temperatureMax: 35, temperatureMin: 29},
-        {icon: 'partly-cloudy-day', temperatureMax: 42, temperatureMin: 40}
-      ]
-    }
-  };
-  // Uncomment the line below to test with the provided fake data
-  //app.updateForecastCard(fakeForecast);
-
-   // Save list of cities to localStorage.
+  // Save list of cities to localStorage, see note below about localStorage.
   app.saveSelectedCities = function() {
     var selectedCities = JSON.stringify(app.selectedCities);
+    // IMPORTANT: See notes about use of localStorage.
     localStorage.selectedCities = selectedCities;
   };
 
@@ -236,10 +227,9 @@
     app.saveSelectedCities();
   }
 
-  if ('serviceWorker' in navigator) {
+  if('serviceWorker' in navigator) {
     navigator.serviceWorker
              .register('./service-worker.js')
              .then(function() { console.log('Service Worker Registered'); });
   }
-
 })();
